@@ -1,0 +1,5 @@
+print(hex(10))
+print(bin(10))
+print(pow(2, 10))
+print(round(3.947589347))
+print(abs(-3))

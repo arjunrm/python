@@ -1,0 +1,11 @@
+# files
+*.pyc
+launch.json
+config.py
+objectdb
+
+# Folders
+.vscode
+.ropeproject
+__pycache__
+
