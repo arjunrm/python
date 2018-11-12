@@ -9,3 +9,5 @@ objectdb
 .ropeproject
 __pycache__
 
+# archives
+*.tar.gz
