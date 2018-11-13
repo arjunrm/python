@@ -11,3 +11,4 @@ __pycache__
 
 # archives
 *.tar.gz
+*.tgz

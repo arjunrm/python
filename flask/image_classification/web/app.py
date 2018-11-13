@@ -1,11 +1,8 @@
 """
-Resources                   Address         Protocol    Params                                                  Response + status code
-Register                    /register       POST        username, pwd                                           200 OK, 301 Invalid username
-Detect similarity           /detect         POST        username, pwd, text1, text2                             200 OK, 301 Invalid username, 302 Invalid pwd, 303 Out of tokens
-Refill tokens               /refill         POST        username, pwd, admin_username, admin_pwd, refill amount 200 OK, 301 Invalid username, 302 Invalid pwd, 304 Invalid admin credentials
-Display users collection    /dispusers      GET         None                                                    200 OK + users collection
-Display admin collection    /dispadmin      GET         None                                                    200 OK + admin collection
-Drop all users documents    /dropusers      GET         None                                                    200 OK, deleted count
+Resources       Address     Protocol    Params                              Return codes
+Register        /register   POST        username, pwd                       200 OK, 301 Invalid username
+Classify        /classify   POST        username, pwd, url/*.jpeg           200 OK, 301 Invalid username, 302 Invalid pwd, 303 Out of tokens
+Refill          /refill     POST        username, pwd, admin_pwd, refill    200 OK, 301 Invalid username, 302 Invalid pwd, 304 Invalid admin credentials
 """
 
 from flask import Flask, jsonify, request
@@ -13,16 +10,18 @@ from flask_restful import Api, Resource
 from pymongo import MongoClient
 from bson.json_util import dumps
 import bcrypt
-import spacy
-import en_core_web_sm
+import requests
+import subprocess
+import json
 
 app = Flask(__name__)
 api = Api(app=app)
 
 client = MongoClient("mongodb://db:27017")
-db = client.similarity # create similarity db
-users = db["users"] # create users collection
-admin = db["admin"] # create admin collection
+db = client.ImageRecognition
+users = db["users"]
+admin = db["admin"]
+
 admin.delete_many({})
 # insert admin credentials into admin collection
 admin.insert_one({
@@ -118,8 +117,8 @@ class Register(Resource):
         # create return json message
         return ret_json(200, "You have successfully signed up to the API")
 
-@api.resource("/detect")
-class Detect(Resource):
+@api.resource("/classify")
+class Classify(Resource):
     def post(self):
         # get the posted data
         posted_data = request.get_json()
@@ -127,8 +126,7 @@ class Detect(Resource):
         # get the data
         username = posted_data["username"]
         password = posted_data["password"]
-        text1 = posted_data["text1"]
-        text2 = posted_data["text2"]
+        url = posted_data["url"]
 
         # check if user exists
         if not user_exists(username):
@@ -136,28 +134,23 @@ class Detect(Resource):
 
         if not verify_pwd(username, password):
             return ret_json(302, "Invalid password")
-        
+
         tokens = get_tokens(username)
         if tokens <= 0:
             return ret_json(303, "Out of tokens")
 
-        # load nlp model
-        nlp = en_core_web_sm.load()
+        r = requests.get(url)
+        retJson = {}
+        with open("temp.jpg", "wb") as f:
+            f.write(r.content)
+            proc = subprocess.Popen('python classify_image.py --model_dir=. --image_file=temp.jpg', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+            proc.communicate()[0]
+            proc.wait()
+            with open("text.txt") as g:
+                retJson = json.load(g)
 
-        text1 = nlp(text1)
-        text2 = nlp(text2)
-
-        # ratio is between 0 to 1, closer to 1, the more similar the text1/2 are
-        ratio = text1.similarity(text2)
-
-        retJson = {
-            "status" : 200,
-            "similarity" : ratio,
-            "message" : "Similarity score calculated"
-        }
-
-        users.update_one({
-            "username" : username
+        users.update({
+            "username" : username,
         },
         {
             "$set" : {
@@ -165,7 +158,7 @@ class Detect(Resource):
             }
         })
 
-        return jsonify(retJson)
+        return retJson
 
 @api.resource("/refill")
 class Refill(Resource):
@@ -204,4 +197,4 @@ class Refill(Resource):
         return ret_json(200, "Refilled successfully")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0")
+    app.run(host="0.0.0.0", debug=True)
